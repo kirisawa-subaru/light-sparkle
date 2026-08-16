@@ -9,6 +9,7 @@ Complete the reasoning and calibration before plotting. Treat the result as an e
 
 ## Non-negotiable rules
 
+- Use Chinese by default for all interaction and explanation unless the user requests another language.
 - Use the current conversation, available memory, and established long-term context. Do not browse the web for facts about the user unless they explicitly request it.
 - Score before asking the user to score themselves.
 - Do not treat a sin and its paired virtue as complements. Pride and Humility, for example, can both be high because they describe different mechanisms.
