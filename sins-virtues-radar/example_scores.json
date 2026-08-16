@@ -1,0 +1,43 @@
+{
+  "subject": "Raymond",
+  "title": "Seven Sins & Seven Virtues",
+  "rmax": 85,
+  "raw_scores": {
+    "Pride": 84,
+    "Greed": 22,
+    "Lust": 44,
+    "Envy": 48,
+    "Gluttony": 17,
+    "Wrath": 76,
+    "Sloth": 10,
+    "Humility": 51,
+    "Charity": 62,
+    "Chastity": 66,
+    "Kindness": 53,
+    "Temperance": 64,
+    "Patience": 55,
+    "Diligence": 83
+  },
+  "display_scores": {
+    "Pride": 84,
+    "Greed": 22,
+    "Lust": 44,
+    "Envy": 48,
+    "Gluttony": 17,
+    "Wrath": 76,
+    "Sloth": 10,
+    "Humility": 51,
+    "Charity": 62,
+    "Chastity": 66,
+    "Kindness": 53,
+    "Temperance": 64,
+    "Patience": 55,
+    "Diligence": 83
+  },
+  "scaling": {
+    "transform": "none",
+    "sin_mean": 43.0,
+    "virtue_mean": 62.0,
+    "note": "Raw and display scores are identical; only the shared radial maximum is set to 85."
+  }
+}
