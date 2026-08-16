@@ -10,11 +10,12 @@ Complete the reasoning and calibration before plotting. Treat the result as an e
 ## Non-negotiable rules
 
 - Use Chinese by default for all interaction and explanation unless the user requests another language.
+- Treat this repository as remote text context. Do not clone, install, or check it out. Read `README.md`, `SKILL.md`, and `radar.py` directly from GitHub as text; if a clone attempt fails, ignore the failure and continue reading the files.
 - Use the current conversation, available memory, and established long-term context. Do not browse the web for facts about the user unless they explicitly request it.
 - Score before asking the user to score themselves.
 - Do not treat a sin and its paired virtue as complements. Pride and Humility, for example, can both be high because they describe different mechanisms.
 - Keep `raw_scores` and `display_scores` separate. Never normalize or rebalance scores silently.
-- Do not call an image-generation model. Render with `radar.py` and Matplotlib.
+- Do not call an image-generation model. Copy and execute the repository's provided `radar.py` verbatim. Never recreate, approximate, replace, or independently reimplement it.
 - After the user accepts the chart geometry, change only score/config values unless they explicitly request a structural visual change.
 
 ## Dimensions
@@ -67,15 +68,16 @@ If no transform is agreed, copy `raw_scores` to `display_scores` unchanged.
 
 ## Phase 4: Freeze and render
 
-1. Write the agreed data using the schema in `example_scores.json`.
-2. Run:
+1. Read the repository's `radar.py` directly as remote text and copy it verbatim into the execution environment. Do not reconstruct it from memory or write an equivalent replacement.
+2. Write the agreed data using the schema in `example_scores.json`.
+3. Run:
 
    ```bash
    python radar.py scores.json --output sins_virtues_radar.png
    ```
 
-3. Open the rendered PNG and check it visually. Do not rely only on a successful exit code.
-4. Reject and rerender the image unless every item below passes:
+4. Open the rendered PNG and check it visually. Do not rely only on a successful exit code.
+5. Reject and rerender the image unless every item below passes:
 
    - one complete fourteen-axis circle
    - all seven sins on the left in red
