@@ -1,0 +1,26 @@
+# systemd user unit. Install:
+#   mkdir -p ~/.config/systemd/user && cp deploy/telepaste.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now telepaste
+#   loginctl enable-linger $USER      # keep it running when you log out
+# Logs: journalctl --user -u telepaste -f
+[Unit]
+Description=telepaste: Telegram to clipboard and daily notes
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Path of the console script: `which telepaste` (pipx/uv put it in ~/.local/bin).
+ExecStart=%h/.local/bin/telepaste --env %h/.telepaste/.env run
+# A Wayland or X11 clipboard is only reachable inside your desktop session.
+# Uncomment the one that matches (`echo $WAYLAND_DISPLAY $DISPLAY` in a terminal).
+#Environment=WAYLAND_DISPLAY=wayland-0
+#Environment=DISPLAY=:0
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+
+[Install]
+WantedBy=default.target

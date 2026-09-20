@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd user agent. Install:
+       cp deploy/com.telepaste.bot.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.telepaste.bot.plist
+     Replace /Users/you with your home directory (launchd does not expand ~).
+     Stop: launchctl bootout gui/$(id -u)/com.telepaste.bot
+     Logs: ~/Library/Logs/telepaste.log -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.telepaste.bot</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/you/.local/bin/telepaste</string>
+        <string>--env</string>
+        <string>/Users/you/.telepaste/.env</string>
+        <string>run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/you/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/you/Library/Logs/telepaste.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/you/Library/Logs/telepaste.log</string>
+</dict>
+</plist>
