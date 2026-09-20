@@ -4,18 +4,11 @@
 
 ## 工具
 
-| 工具 | 做什么 | 从哪里开始 |
+| 工具 | 用途 | 从哪里开始 |
 |---|---|---|
 | [telepaste](telepaste/) | 把发给 Telegram bot 的文字、图片送到电脑剪贴板；可选保存日记和上传图床 | [安装与使用](telepaste/README.md) |
-| [七宗罪与七美德雷达图](sins-virtues-radar/) | 和 agent 一起评分、讨论，生成雷达图 | [使用流程](sins-virtues-radar/README.md) |
+| [sins-virtues-radar](sins-virtues-radar/) | 和 agent 一起评分、讨论，生成雷达图 | [使用流程](sins-virtues-radar/README.md) |
 
-给 agent 仓库链接时，说明想用哪一个工具。先进入对应目录读 README；各工具的操作指令只适用于该工具。
-
-## 目录约定
-
-一个工具一个子目录，各自提供 README、依赖和适用平台说明。需要安装哪些依赖、如何运行和停止，都以对应工具的文档为准。普通克隆即可得到源码，无需初始化子仓库。
-
-后续如果某个工具需要独立维护、单独发布版本，再拆成自己的仓库。合集内发布时可用 `工具名-v版本号` 区分标签，例如 `telepaste-v0.1.0`。
 
 ## 许可证
 
