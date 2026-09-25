@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>黑猫与 Clawd 的摇篮曲</title>
+<style>
+html,body{margin:0;height:100%;background:#1a1714;display:flex;align-items:center;justify-content:center}
+canvas{width:min(94vmin,760px);height:min(94vmin,760px);border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.5);cursor:pointer}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const W = 640, H = 640;
+const cv = document.getElementById('c');
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+cv.width = W * dpr; cv.height = H * dpr;
+const ctx = cv.getContext('2d');
+ctx.scale(dpr, dpr);
+
+// ---------- crayon toolkit ----------
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+let R = Math.random;
+const rr = (a, b) => a + (b - a) * R();
+
+function makeLayer() { const c = document.createElement('canvas'); c.width = W * dpr; c.height = H * dpr; const g = c.getContext('2d'); g.scale(dpr, dpr); return [c, g]; }
+
+function stroke(g, pts, color, w, opt = {}) {
+  const passes = opt.passes ?? 2, jit = opt.jit ?? 1.2, alpha = opt.alpha ?? 0.9;
+  g.save(); g.strokeStyle = color; g.lineCap = 'round'; g.lineJoin = 'round';
+  for (let p = 0; p < passes; p++) {
+    g.lineWidth = w * rr(0.65, 1.05);
+    g.globalAlpha = alpha * rr(0.55, 0.95);
+    g.setLineDash([rr(14, 40), rr(0.5, 2.5)]);
+    g.lineDashOffset = rr(0, 30);
+    g.beginPath();
+    let first = true;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 7));
+      for (let k = (i === 0 ? 0 : 1); k <= n; k++) {
+        const t = k / n;
+        const x = x0 + (x1 - x0) * t + rr(-jit, jit) * 0.6, y = y0 + (y1 - y0) * t + rr(-jit, jit) * 0.6;
+        if (first) { g.moveTo(x, y); first = false; } else g.lineTo(x, y);
+      }
+    }
+    g.stroke();
+  }
+  g.restore();
+}
+
+function hatch(g, clip, bbox, color, opt = {}) {
+  const [bx, by, bw, bh] = bbox;
+  const ang = opt.angle ?? -0.9, gap = opt.gap ?? 3, w = opt.w ?? 1.6, alpha = opt.alpha ?? 0.7, layers = opt.layers ?? 2;
+  g.save(); g.beginPath(); clip(g); g.clip();
+  g.strokeStyle = color; g.lineCap = 'round';
+  const cx = bx + bw / 2, cy = by + bh / 2, rad = Math.hypot(bw, bh) / 2 + 4;
+  for (let L = 0; L < layers; L++) {
+    const a = ang + L * (opt.cross ?? 0.35) + rr(-0.05, 0.05);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    for (let o = -rad; o <= rad; o += gap * rr(0.7, 1.3)) {
+      let s = -rad;
+      while (s < rad) {
+        const e = Math.min(rad, s + rr(opt.minLen ?? 20, opt.maxLen ?? 70));
+        const j1 = rr(-0.8, 0.8), j2 = rr(-0.8, 0.8);
+        g.globalAlpha = alpha * rr(0.45, 1);
+        g.lineWidth = w * rr(0.6, 1.2);
+        g.beginPath();
+        g.moveTo(cx + ca * s - sa * (o + j1), cy + sa * s + ca * (o + j1));
+        g.lineTo(cx + ca * e - sa * (o + j2), cy + sa * e + ca * (o + j2));
+        g.stroke();
+        s = e + rr(0, opt.skip ?? 4);
+      }
+    }
+  }
+  g.restore();
+}
+
+const wob = (pts, a) => pts.map(([x, y]) => [x + rr(-a, a), y + rr(-a, a)]);
+const polyPath = pts => g => { g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); g.closePath(); };
+const rectPts = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]];
+function ellPts(cx, cy, rx, ry, n = 28) { const a = []; for (let i = 0; i <= n; i++) { const t = i / n * Math.PI * 2; a.push([cx + Math.cos(t) * rx, cy + Math.sin(t) * ry]); } return a; }
+function fillPts(g, pts, col, a = 1) { g.save(); g.globalAlpha = a; g.fillStyle = col; g.beginPath(); polyPath(pts)(g); g.fill(); g.restore(); }
+function box(g, x, y, w, h, fill, line, opt = {}) {
+  if (opt.solid) fillPts(g, wob(rectPts(x, y, w, h), 0.8), opt.solid, opt.solidA ?? 1);
+  hatch(g, polyPath(wob(rectPts(x, y, w, h), 1)), [x, y, w, h], fill, opt);
+  if (line) stroke(g, wob(rectPts(x, y, w, h), 0.8), line, opt.lw ?? 1.6, { passes: 2 });
+}
+function crSpline(p, seg = 6) {
+  const o = [];
+  for (let i = 0; i < p.length - 1; i++) {
+    const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2;
+    for (let k = 0; k < seg; k++) {
+      const t = k / seg, t2 = t * t, t3 = t2 * t;
+      o.push([0, 1].map(j => 0.5 * ((2 * p1[j]) + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3)));
+    }
+  }
+  o.push(p[p.length - 1]);
+  return o;
+}
+function label(g, text, x, y, size, col, alpha = 1) {
+  g.save();
+  g.font = `${size}px "Chalkboard SE","Comic Sans MS","Xingkai SC","STKaiti","KaiTi","Noto Sans CJK SC",cursive`;
+  g.textAlign = 'center'; g.fillStyle = col;
+  for (let i = 0; i < 3; i++) { g.globalAlpha = alpha * rr(0.45, 0.8); g.fillText(text, x + rr(-0.7, 0.7), y + rr(-0.7, 0.7)); }
+  g.restore();
+}
+
+// ---------- the piece: "Lullaby for a Black Cat", F major, 80 bpm ----------
+const BPM = 80, SPB = 60 / BPM, LOOP = 66;
+const MEL = [
+  [69, 1], [72, 1], [77, 1.5], [76, .5],
+  [74, 1], [72, 1], [67, 2],
+  [69, 1], [74, 1], [77, 1], [76, .5], [74, .5],
+  [74, 1.5], [72, .5], [70, 2],
+  [69, 1], [72, 1], [77, 1], [81, 1],
+  [79, 1.5], [77, .5], [74, 2],
+  [72, 1], [76, 1], [79, 1.5], [76, .5],
+  [77, 3], [null, 1],
+  [77, 1], [76, .5], [74, .5], [69, 2],
+  [72, 1], [76, 1], [81, 2],
+  [74, 1], [77, 1], [74, 1], [70, 1],
+  [72, 1], [69, 1], [65, 2],
+  [67, 1], [70, 1], [74, 1.5], [72, .5],
+  [76, 1], [74, .5], [72, .5], [67, 2],
+  [70, 1], [74, 1], [72, 1], [76, 1],
+  [77, 4],
+];
+const CHORDS = [
+  [[41, [48, 53, 57]]], [[40, [48, 52, 55]]], [[38, [45, 50, 53]]], [[46, [50, 53, 58]]],
+  [[45, [48, 53, 57]]], [[43, [50, 53, 58]]], [[36, [46, 52, 55]]], [[41, [48, 53, 57]]],
+  [[38, [45, 50, 53]]], [[45, [48, 52, 57]]], [[46, [50, 53, 58]]], [[41, [48, 53, 57]]],
+  [[43, [50, 55, 58]]], [[36, [48, 52, 55]]], [[46, [50, 53, 58]], [36, [46, 52, 55]]],
+  [[41, [48, 53, 57, 60]]],
+];
+const mel = [], notes = [];
+{
+  let b = 0;
+  for (const [m, d] of MEL) { const n = { m, s: b, d, h: 0, vis: d - 0.08 }; mel.push(n); if (m !== null) notes.push(n); b += d; }
+  CHORDS.forEach((segs, bar) => {
+    const segLen = 4 / segs.length;
+    segs.forEach(([bass, t], si) => {
+      const s0 = bar * 4 + si * segLen;
+      const seq = bar === 15 ? [bass, ...t] : [bass, t[0], t[1], t[2], t[1], t[0], t[1], t[2]].slice(0, segLen * 2);
+      seq.forEach((m, i) => {
+        const s = s0 + i * 0.5;
+        notes.push({ m, s, d: s0 + segLen - s, h: i === 0 ? 2 : 1, vis: bar === 15 ? s0 + 4 - s : 0.18 });  // matches the tail's tap-and-hold
+      });
+    });
+  });
+}
+
+// Dynamics: [beat, level] breakpoints, linear in between (p ≈ .45, mp ≈ .6, mf ≈ .75, f ≈ .95).
+// MARKS is what gets printed under the staff: [beat, text] or [beat, hairpin, endBeat].
+const DYN = [[0, .45], [8, .45], [16, .62], [20, .62], [24, .95], [28, .95], [32, .55], [44, .6], [48, .95], [56, .95], [60, .45], [66, .45]];
+function level(b) {
+  for (let i = 1; i < DYN.length; i++) { const [b1, v1] = DYN[i]; if (b <= b1) { const [b0, v0] = DYN[i - 1]; return v0 + (v1 - v0) * (b - b0) / (b1 - b0 || 1); } }
+  return DYN[DYN.length - 1][1];
+}
+const MARKS = [[0, 'p'], [8, '<', 16], [16, 'mp'], [20, '<', 24], [24, 'f'], [28, '>', 32], [32, 'mp'], [44, '<', 48], [48, 'f'], [56, '>', 60], [60, 'p']];
+
+// ---------- audio ----------
+let actx = null, master, rev, wave, hardWave, noiseBuf, t0 = 0, loopsScheduled = 0;
+function impulse(sec) {
+  const n = actx.sampleRate * sec, b = actx.createBuffer(2, n, actx.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2); }
+  return b;
+}
+// hammer "clack" for panicked hard hits: a short band-passed noise burst
+function thump(t, amt) {
+  const src = actx.createBufferSource(), bp = actx.createBiquadFilter(), g = actx.createGain();
+  src.buffer = noiseBuf; bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 1.2;
+  g.gain.setValueAtTime(.12 * amt, t); g.gain.exponentialRampToValueAtTime(.001, t + .05);
+  src.connect(bp); bp.connect(g); g.connect(master); src.start(t); src.stop(t + .06);
+}
+function voice(m, t, d, v, long, bright = 1) {
+  const f = 440 * Math.pow(2, (m - 69) / 12);
+  const g = actx.createGain(), g2 = actx.createGain(), lp = actx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.Q.value = 0.3;
+  lp.frequency.setValueAtTime(Math.min(f * 9 * bright, 14000), t);  // harder hit = brighter tone
+  lp.frequency.setTargetAtTime(Math.max(f * 2.2 * bright, 400), t + 0.01, 0.35);
+  const o1 = actx.createOscillator(), o2 = actx.createOscillator();
+  o1.setPeriodicWave(wave); o2.setPeriodicWave(wave);
+  o1.frequency.value = f; o2.frequency.value = f * 1.0013;
+  g2.gain.value = 0.5;
+  o1.connect(g); o2.connect(g2); g2.connect(g);
+  if (bright > 1) {  // a hard hit excites the upper partials: blend in a harmonic-rich layer
+    const o3 = actx.createOscillator(), g3 = actx.createGain();
+    o3.setPeriodicWave(hardWave); o3.frequency.value = f; g3.gain.value = .45 * (bright - 1);
+    o3.connect(g3); g3.connect(g); o3.start(t); o3.stop(Math.max(t + d, t + 0.26) + 0.8);
+  }
+  g.connect(lp); lp.connect(master); lp.connect(rev);
+  const tau = 0.35 + 1.4 * Math.max(0, (84 - m) / 48);
+  const rel = Math.max(t + d, t + 0.26);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.006);
+  g.gain.setTargetAtTime(v * 0.35, t + 0.006, 0.12);
+  g.gain.setTargetAtTime(0, t + 0.25, tau);
+  g.gain.setTargetAtTime(0, rel, long ? 0.9 : 0.09);
+  const end = rel + (long ? 5 : 0.8);
+  o1.start(t); o2.start(t); o1.stop(end); o2.stop(end);
+}
+function scheduleLoop(k) {
+  const base = t0 + k * LOOP * SPB;
+  for (const n of notes) {
+    if (n.h === 0) continue;  // melody goes through schedMel
+    const vel = (n.h === 2 ? 0.2 : 0.12) * level(n.s) / .75;
+    voice(n.m, base + n.s * SPB + (Math.random() - 0.5) * 0.012, n.d * SPB, vel * (0.9 + Math.random() * 0.2), n.s >= 60);
+  }
+  loopsScheduled = k + 1;
+}
+function initAudio() {
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  const comp = actx.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 3;
+  master = actx.createGain(); master.gain.value = 0.9;
+  master.connect(comp); comp.connect(actx.destination);
+  const conv = actx.createConvolver(); conv.buffer = impulse(2.8);
+  rev = actx.createGain(); rev.gain.value = 0.28; rev.connect(conv); conv.connect(comp);
+  wave = actx.createPeriodicWave(new Float32Array(8), new Float32Array([0, 1, .42, .2, .12, .07, .04, .02]));
+  hardWave = actx.createPeriodicWave(new Float32Array(17), new Float32Array([0, 1, .7, .55, .45, .38, .32, .27, .23, .2, .17, .15, .13, .11, .1, .09, .08]));
+  noiseBuf = actx.createBuffer(1, actx.sampleRate * .06, actx.sampleRate);
+  { const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  t0 = actx.currentTime + CAT_READY;  // give the cat time to climb down before the first note
+  startT = performance.now() / 1000;
+  scheduleLoop(0);
+  setInterval(() => { if (actx.currentTime > t0 + (loopsScheduled * LOOP - 8) * SPB) scheduleLoop(loopsScheduled); }, 500);
+  setInterval(schedMel, 40);
+}
+// a small synthesized meow: pitch rises then falls, formants glide i -> a -> u
+function meow(t) {
+  const f0 = 520 + Math.random() * 120;
+  const o = actx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0 * .9, t);
+  o.frequency.linearRampToValueAtTime(f0 * 1.25, t + .18);
+  o.frequency.linearRampToValueAtTime(f0 * .8, t + .55);
+  const vib = actx.createOscillator(), vg = actx.createGain(); vib.frequency.value = 6; vg.gain.value = 8; vib.connect(vg); vg.connect(o.frequency);
+  const f1 = actx.createBiquadFilter(), f2 = actx.createBiquadFilter(), g2 = actx.createGain(), g = actx.createGain();
+  f1.type = f2.type = 'bandpass'; f1.Q.value = 6; f2.Q.value = 8; g2.gain.value = .5;
+  f1.frequency.setValueAtTime(900, t); f1.frequency.linearRampToValueAtTime(1500, t + .2); f1.frequency.linearRampToValueAtTime(700, t + .55);
+  f2.frequency.setValueAtTime(2600, t); f2.frequency.linearRampToValueAtTime(2200, t + .2); f2.frequency.linearRampToValueAtTime(1100, t + .55);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.5, t + .05); g.gain.setValueAtTime(.5, t + .35); g.gain.linearRampToValueAtTime(0, t + .6);
+  o.connect(f1); o.connect(f2); f1.connect(g); f2.connect(g2); g2.connect(g); g.connect(master); g.connect(rev);
+  o.start(t); vib.start(t); o.stop(t + .65); vib.stop(t + .65);
+}
+let melNext = 0;
+function schedMel() {
+  if (!actx || actx.state !== 'running') return;
+  const N = hops.length, horizon = actx.currentTime + 0.3;
+  for (;;) {
+    const loop = Math.floor(melNext / N), n = hops[melNext % N], at = t0 + (loop * LOOP + n.s) * SPB;
+    if (at > horizon) break;
+    if (at >= actx.currentTime - 0.05) {
+      const P = played(loop, n.idx);
+      // panicked right notes are only louder; the harsh layer and hammer clack belong to wrong notes
+      const harsh = P.wrong ? Math.max(1, P.panic) : 0;
+      voice(P.m, at + (Math.random() - .5) * .012, n.d * SPB, P.vel * (.9 + Math.random() * .2), n.s >= 60, 1 + .5 * harsh);
+      if (harsh) thump(at, harsh);
+    }
+    melNext++;
+  }
+}
+// absolute song position in beats (loop number = floor(pos / LOOP))
+function songPos() {
+  if (!actx) return null;
+  const t = actx.currentTime - t0;
+  return t < 0 ? null : t / SPB;
+}
+
+// ---------- geometry ----------
+const KX = 20, KW = 600, KY = 372, KH = 74, LOW = 48, HIGH = 84;
+const isBlack = m => [1, 3, 6, 8, 10].includes(((m % 12) + 12) % 12);
+const whites = []; for (let m = LOW; m <= HIGH; m++) if (!isBlack(m)) whites.push(m);
+const wkw = KW / whites.length;
+function keyRect(m) {
+  while (m < LOW) m += 12; while (m > HIGH) m -= 12;
+  if (!isBlack(m)) { const i = whites.indexOf(m); return { x: KX + i * wkw, y: KY, w: wkw, h: KH, black: false }; }
+  const i = whites.indexOf(m - 1);
+  return { x: KX + (i + 1) * wkw - wkw * 0.3, y: KY, w: wkw * 0.6, h: KH * 0.62, black: true };
+}
+const PAGES = [160, 320], PW = 160, SY = [242, 292], LS = 5, CLEFW = 22, BARW = (PW - 20 - CLEFW) / 2;
+const sysOrigin = k => ({ x: PAGES[k >> 1] + 10, y: SY[k & 1] });
+const LET = { 0: 0, 1: 0, 2: 1, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5, 10: 6, 11: 6 };
+const dia = m => (Math.floor(m / 12) - 1) * 7 + LET[m % 12];
+function beatX(s) { const bar = Math.floor(s / 4), lb = bar & 7, o = sysOrigin(lb >> 1); return { o, x: o.x + CLEFW + (lb & 1) * BARW + (s - bar * 4) / 4 * (BARW - 8) + 7 }; }
+
+// ---------- static layers (3 "boil" variants) ----------
+function drawStatic(g, bk, seed) {
+  R = mulberry32(seed);
+  g.fillStyle = '#f3ead6'; g.fillRect(0, 0, W, H);
+  hatch(g, G => G.rect(0, 0, W, 178), [0, 0, W, 178], '#e2cfa8', { gap: 4.5, alpha: .32, w: 1.5, angle: -1.15, cross: .5 });
+  // lamp
+  stroke(g, [[566, 94], [565, 132], [566, 168]], '#7d6040', 3, { passes: 3 });
+  hatch(g, polyPath(wob(ellPts(566, 170, 24, 6), .8)), [540, 162, 52, 16], '#8e6c47', { gap: 1.6, alpha: .9, angle: 0 });
+  const shade = wob([[530, 96], [602, 96], [588, 40], [544, 40], [530, 96]], 1.2);
+  fillPts(g, shade, '#f7d98a', .55);
+  hatch(g, polyPath(shade), [528, 38, 76, 60], '#f0b94a', { gap: 2.4, alpha: .8, angle: -1.35 });
+  hatch(g, polyPath(shade), [528, 38, 76, 60], '#e0892f', { gap: 7, alpha: .35, angle: .4, layers: 1 });
+  stroke(g, shade, '#c47128', 1.5);
+  // lid + front panel
+  box(g, -4, 178, W + 8, 24, '#a6bacb', null, { gap: 2, alpha: .85, angle: -.15, solid: '#b9c9d6', solidA: .5 });
+  box(g, -4, 202, W + 8, 162, '#8ea8bf', null, { gap: 2.6, alpha: .75, angle: -1, solid: '#a8bdcf', solidA: .45 });
+  hatch(g, G => G.rect(0, 202, W, 162), [0, 202, W, 162], '#6a89a4', { gap: 10, alpha: .3, angle: -.95, layers: 1 });
+  stroke(g, [[-4, 179], [W + 4, 178]], '#56708a', 2.6, { passes: 3 });
+  stroke(g, [[-4, 202], [W + 4, 202]], '#56708a', 1.8);
+  // sheet music
+  for (const px of PAGES) {
+    const pts = wob(rectPts(px, 206, PW, 116), 1);
+    fillPts(g, pts, '#fbf7ec');
+    hatch(g, polyPath(pts), [px, 206, PW, 116], '#e6dfcc', { gap: 5, alpha: .35, angle: -1.2, w: 1.2 });
+    stroke(g, pts, '#8d867a', 1.3);
+  }
+  stroke(g, [[320, 207], [320, 321]], '#b5ad9d', 1.2, { passes: 1 });
+  for (let k = 0; k < 4; k++) {
+    const { x, y } = sysOrigin(k);
+    for (let l = 0; l < 5; l++) stroke(g, [[x, y - l * LS], [x + PW - 20, y - l * LS]], '#77716a', .8, { passes: 1, jit: .4, alpha: .8 });
+    for (const bx of [x, x + CLEFW + BARW, x + PW - 20]) stroke(g, [[bx, y], [bx, y - 4 * LS]], '#77716a', .9, { passes: 1, jit: .3 });
+    stroke(g, crSpline([[x + 6, y + 6], [x + 6, y - 4], [x + 7, y - 22], [x + 3, y - 20], [x + 4, y - 13], [x + 10, y - 8], [x + 10, y - 2], [x + 5, y + 1], [x + 2, y - 4], [x + 6, y - 8], [x + 9, y - 5]], 4), '#3a3632', 1.2, { passes: 1, jit: .3 });
+    g.save(); g.fillStyle = '#3a3632'; g.font = '13px serif'; g.fillText('♭', x + 13, y - 8); g.restore();
+  }
+  // ledge + pencil
+  box(g, 146, 322, 348, 10, '#c89f6c', '#80603f', { gap: 1.6, alpha: .9, angle: .1, lw: 1.3 });
+  box(g, 392, 316, 62, 6, '#f0c24b', '#a07a22', { gap: 1.4, alpha: .9, angle: 0, lw: 1, solid: '#f4d06a' });
+  fillPts(g, [[454, 316], [466, 319], [454, 322]], '#e8c898');
+  fillPts(g, [[462, 318], [467, 319], [462, 320]], '#333');
+  box(g, 386, 316, 6, 6, '#a9a9a9', null, { gap: 1.2, alpha: .9, solid: '#bbb' });
+  box(g, 378, 316, 8, 6, '#e39a98', null, { gap: 1.2, alpha: .9, solid: '#eaa9a6' });
+  // keybed, cheeks, white keys
+  box(g, -4, 364, W + 8, 9, '#4f6a83', null, { gap: 1.5, alpha: .95, angle: 0 });
+  box(g, -4, 364, KX + 4, 82, '#5c7892', '#3f556a', { gap: 1.8, alpha: .9 });
+  box(g, KX + KW, 364, W - KX - KW + 4, 82, '#5c7892', '#3f556a', { gap: 1.8, alpha: .9 });
+  for (let i = 0; i < whites.length; i++) box(g, KX + i * wkw, KY, wkw, KH, '#e9e0c9', '#6d675f', { gap: 4, alpha: .3, lw: 1.1, solid: '#fbf5e6' });
+  // lower body + floor
+  box(g, -4, 446, W + 8, 166, '#7f9ab2', null, { gap: 2.6, alpha: .75, angle: -1.05, solid: '#9cb2c6', solidA: .45 });
+  hatch(g, G => G.rect(0, 446, W, 10), [0, 446, W, 10], '#3e5468', { gap: 1.4, alpha: .6, angle: 0 });
+  stroke(g, wob(rectPts(40, 476, 560, 116), 1), '#5f7b95', 1.4, { alpha: .6 });
+  box(g, -4, 612, W + 8, 32, '#d3b184', null, { gap: 2.2, alpha: .8, angle: -.1 });
+  stroke(g, [[-4, 612], [W + 4, 612]], '#8a6a45', 2);
+  // black keys on their own layer, so pressed white keys can sit underneath
+  bk.clearRect(0, 0, W, H);
+  for (let m = LOW; m <= HIGH; m++) {
+    if (!isBlack(m)) continue;
+    const r = keyRect(m);
+    fillPts(bk, wob(rectPts(r.x, r.y, r.w, r.h), .6), '#2d2b29');
+    hatch(bk, G => G.rect(r.x, r.y, r.w, r.h), [r.x, r.y, r.w, r.h], '#111', { gap: 1.5, alpha: .8, angle: -1.3 });
+    stroke(bk, [[r.x + r.w * .3, r.y + 4], [r.x + r.w * .3, r.y + r.h - 6]], '#6a6660', 1, { passes: 1, alpha: .6 });
+  }
+}
+const layers = [1, 2, 3].map(seed => { const [base, g] = makeLayer(); const [blk, bk] = makeLayer(); drawStatic(g, bk, seed * 101); return { base, blk }; });
+
+// paper grain + vignette
+const [grain, gg] = makeLayer();
+{
+  const img = gg.getImageData(0, 0, grain.width, grain.height), d = img.data;
+  for (let i = 0; i < d.length; i += 4) if (Math.random() < 0.3) { const v = 60 + Math.random() * 80; d[i] = v; d[i + 1] = v * .9; d[i + 2] = v * .75; d[i + 3] = Math.random() * 38; }
+  gg.putImageData(img, 0, 0);
+  const vg = gg.createRadialGradient(W / 2, H / 2, W * .35, W / 2, H / 2, W * .75);
+  vg.addColorStop(0, 'rgba(80,55,30,0)'); vg.addColorStop(1, 'rgba(80,55,30,.22)');
+  gg.fillStyle = vg; gg.fillRect(0, 0, W, H);
+}
+
+// ---------- dynamic pieces ----------
+function drawSheet(g, beat, cur, curWrong) {
+  const half = beat != null && beat >= 32 ? 1 : 0;
+  // dynamics under the staff; hairpins are split at system breaks (8 beats per system)
+  for (const [b, mk, e] of MARKS) {
+    if (Math.floor(b / 32) !== half) continue;
+    if (mk === '<' || mk === '>') {
+      for (let a = b; a < e;) {
+        const z = Math.min(e, (Math.floor(a / 8) + 1) * 8), P = beatX(a), Q = beatX(z - 0.001), y = P.o.y + 13;
+        const wAt = q => 3.5 * (mk === '<' ? (q - b) : (e - q)) / (e - b);
+        stroke(g, [[P.x, y - wAt(a)], [Q.x, y - wAt(z)]], '#4a453f', .9, { passes: 1, jit: .2 });
+        stroke(g, [[P.x, y + wAt(a)], [Q.x, y + wAt(z)]], '#4a453f', .9, { passes: 1, jit: .2 });
+        a = z;
+      }
+    } else {
+      const P = beatX(b);
+      g.save(); g.font = 'italic bold 11px Georgia, serif'; g.fillStyle = '#3a3632'; g.fillText(mk, P.x - 4, P.o.y + 17); g.restore();
+    }
+  }
+  if (beat != null && beat < 64) {
+    const { o, x } = beatX(beat);
+    if (Math.floor(beat / 32) === half) stroke(g, [[x, o.y - 27], [x, o.y + 7]], '#e0662f', 2, { passes: 1, alpha: .35, jit: .3 });
+  }
+  for (const n of mel) {
+    const bar = Math.floor(n.s / 4);
+    if ((bar >> 3) !== half) continue;
+    const { o, x } = beatX(n.s);
+    if (n.m === null) { stroke(g, [[x - 1, o.y - 16], [x + 2, o.y - 12], [x - 1, o.y - 9], [x + 2, o.y - 5], [x - 1, o.y - 3]], '#3a3632', 1.4, { passes: 1, jit: .2 }); continue; }
+    const st = dia(n.m) - 30, y = o.y - st * LS / 2;
+    const isCur = n === cur, done = beat != null && n.s < beat && !isCur;
+    const col = isCur ? (curWrong ? '#d23c3c' : '#e0662f') : done ? '#2b2926' : '#5e5850';
+    for (let s = (st <= -2 ? -2 : 10); st <= -2 ? s >= st : s <= st; s += st <= -2 ? -2 : 2) {
+      if (st > -2 && st < 10) break;
+      stroke(g, [[x - 5, o.y - s * LS / 2], [x + 5, o.y - s * LS / 2]], '#77716a', .9, { passes: 1, jit: .2 });
+    }
+    const sc = isCur ? 1.3 : 1, hy = y - (isCur ? 1 : 0);
+    g.save(); g.translate(x, hy); g.rotate(-0.35); g.beginPath(); g.ellipse(0, 0, 3.3 * sc, 2.4 * sc, 0, 0, Math.PI * 2);
+    if (n.d >= 2) { g.lineWidth = 1.2; g.strokeStyle = col; g.stroke(); } else { g.fillStyle = col; g.fill(); }
+    g.restore();
+    if (n.d < 3) {
+      const up = st < 4, sx = up ? x + 3 * sc : x - 3 * sc, ey = up ? hy - 17 : hy + 17;
+      stroke(g, [[sx, hy], [sx, ey]], col, 1.1, { passes: 1, jit: .2 });
+      if (n.d === 0.5) stroke(g, up ? [[sx, ey], [sx + 4, ey + 5], [sx + 5, ey + 10]] : [[sx, ey], [sx + 4, ey - 5], [sx + 5, ey - 10]], col, 1.1, { passes: 1, jit: .2 });
+    }
+    if (n.d === 1.5 || n.d === 3) { g.save(); g.fillStyle = col; g.beginPath(); g.arc(x + 6, hy - (st % 2 === 0 ? 1.3 : 0), 1, 0, 7); g.fill(); g.restore(); }
+  }
+}
+
+function drawKeys(g, beat, loop, blk) {
+  const pressed = beat == null ? [] : notes.filter(n => beat >= n.s && beat < n.s + n.vis);
+  const paint = (n, black) => {
+    const P = n.h === 0 ? played(loop, n.idx) : null;
+    const r = keyRect(P ? P.m : n.m); if (r.black !== black) return;
+    const col = n.h === 0 ? (P.wrong ? '#e0503c' : '#ef8446') : '#86b3d9';
+    const x = r.x + 2, y = r.y + 1, w = r.w - 4, h = r.h - 3;
+    fillPts(g, rectPts(x, y, w, h), col, black ? .7 : (n.h === 0 ? .5 : .4));
+    hatch(g, G => G.rect(x, y, w, h), [x, y, w, h], col, { gap: 2.2, alpha: .8, angle: -1.2 });
+    if (!black) stroke(g, [[x, y + 2], [x + w, y + 2]], '#5b4a3a', 1.4, { passes: 1, alpha: .5 });
+  };
+  pressed.forEach(n => paint(n, false));
+  g.drawImage(blk, 0, 0, W, H);
+  pressed.forEach(n => paint(n, true));
+}
+
+// Cat choreography after the first click (seconds): wake, turn, walk a little, climb down to the floor, turn back.
+// Pose maps the cat's local drawing (body bottom-center at 176,174) onto the world.
+const CAT_BOTTOM = { ox: 160, oy: 628 }, CAT_READY = 4.8;
+function catPose(c) {
+  const top = { ox: 176, oy: 174, flip: 1, rot: 0, bottom: false };
+  if (c == null || c < 1.2) return top;
+  if (c < 1.5) return { ...top, flip: Math.cos(Math.PI * (c - 1.2) / .3) };
+  if (c < 2.2) { const p = (c - 1.5) / .7; return { ox: 176 - 16 * p, oy: 174 - Math.abs(Math.sin(p * Math.PI * 3)) * 2.5, flip: -1, rot: 0, bottom: false }; }
+  if (c < 3.9) {
+    const p = (c - 2.2) / 1.7, k = Math.PI * 10, e = p - Math.sin(p * k) / k;  // five little steps down the front
+    return { ox: 160 + Math.sin(p * k) * 2, oy: 174 + (CAT_BOTTOM.oy - 174) * e, flip: -1, rot: Math.sin(p * k) * .06, bottom: false };
+  }
+  if (c < 4.2) return { ...CAT_BOTTOM, flip: -Math.cos(Math.PI * (c - 3.9) / .3), rot: 0, bottom: false };
+  return { ...CAT_BOTTOM, flip: 1, rot: 0, bottom: true };
+}
+
+// Tail accompaniment: the cat sits on the floor and reaches its tail up to the bass keys.
+// The tail keeps a fixed length: it bows sideways, and the bow depth k is solved so the arc length stays TAIL_LEN.
+const TAIL_BASE = [CAT_BOTTOM.ox - 48, CAT_BOTTOM.oy - 12], TAIL_LEN = 222;
+const bassN = notes.filter(n => n.h > 0).sort((a, b) => a.s - b.s);
+function tailTarget(m) { const r = keyRect(m); return [r.x + r.w / 2, r.black ? r.y + r.h - 8 : r.y + KH - 14]; }
+function tailCurve(tx, ty, k, n = 24) {
+  const [bx, by] = TAIL_BASE, cx = tx - bx, cy = ty - by, d = Math.hypot(cx, cy), nx = cy / d, ny = -cx / d;  // normal bows away from the body
+  const P = [[bx, by], [bx + cx / 3 + nx * k, by + cy / 3 + ny * k], [bx + 2 * cx / 3 + nx * k, by + 2 * cy / 3 + ny * k], [tx, ty]];
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const u = i / n, v = 1 - u, c = [v * v * v, 3 * v * v * u, 3 * v * u * u, u * u * u];
+    out.push([0, 1].map(j => c[0] * P[0][j] + c[1] * P[1][j] + c[2] * P[2][j] + c[3] * P[3][j]));
+  }
+  return out;
+}
+const arcLen = pts => pts.reduce((L, p, i) => i ? L + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0, 0);
+function drawTail(g, t, beat) {
+  let tip;
+  if (beat == null) { const [x, y] = tailTarget(53); tip = [x + Math.sin(t * 1.3) * 4, y + 14]; }
+  else {
+    let i = -1; for (let k = 0; k < bassN.length; k++) { if (bassN[k].s <= beat) i = k; else break; }
+    const N = bassN.length, a = bassN[i < 0 ? N - 1 : i], as = i < 0 ? a.s - LOOP : a.s;
+    const b = bassN[(i + 1) % N], bs = i + 1 >= N ? b.s + LOOP : b.s;
+    const f = (beat - as) / (bs - as), A = tailTarget(a.m), B = tailTarget(b.m);
+    if (f < .35) tip = [A[0], A[1] - 2];                       // tap and hold the key
+    else { const q = (f - .35) / .65, e = q * q * (3 - 2 * q); tip = [A[0] + (B[0] - A[0]) * e, A[1] + (B[1] - A[1]) * q + 14 * Math.sin(Math.PI * q)]; }  // pull back, swing over
+  }
+  let lo = 0, hi = 200;
+  for (let it = 0; it < 16; it++) { const mid = (lo + hi) / 2; if (arcLen(tailCurve(tip[0], tip[1], mid)) < TAIL_LEN) lo = mid; else hi = mid; }
+  const pts = tailCurve(tip[0], tip[1], lo);
+  stroke(g, pts, '#1c1b1a', 7, { passes: 3, jit: 1.2 });
+  stroke(g, pts.slice(0, Math.floor(pts.length * .6)), '#1c1b1a', 10, { passes: 2, jit: 1.2 });
+}
+
+// w: 0 = asleep, 1 = awake
+function drawCat(g, t, beat, lookX, twitch, w, pose) {
+  g.save(); g.translate(pose.ox, pose.oy); g.scale(Math.abs(pose.flip) < .06 ? .06 * Math.sign(pose.flip || 1) : pose.flip, 1); g.rotate(pose.rot); g.translate(-176, -174);
+  const br = Math.sin(t * (1.1 + w)) * (0.045 - 0.02 * w);
+  if (!pose.bottom) {
+    const sw = (beat != null ? Math.sin(beat * Math.PI) : 0) * w + Math.sin(t * 0.5) * 0.25 * (1 - w);
+    const tail = crSpline([[128, 162], [108, 170], [98, 188], [96 + sw * 2, 206], [100 + sw * 6, 222], [110 + sw * 11, 231], [121 + sw * 13, 227]], 5);
+    stroke(g, tail, '#1c1b1a', 7, { passes: 3, jit: 1.2 });
+    stroke(g, tail.slice(0, Math.floor(tail.length * .7)), '#1c1b1a', 10, { passes: 2, jit: 1.2 });
+  }
+  const ry = 23 * (1 + br), body = wob(ellPts(176, 174 - ry, 58, ry), 1);
+  fillPts(g, body, '#2a2826', .55);
+  hatch(g, polyPath(body), [112, 120, 130, 60], '#1d1c1b', { gap: 1.6, alpha: .9, w: 2, angle: -0.8, layers: 3 });
+  stroke(g, body, '#141312', 1.8);
+  for (const [px, py] of [[206, 172], [227, 173]]) {
+    const p = wob(ellPts(px, py, 9, 4, 14), .5); fillPts(g, p, '#1d1c1b', .9); stroke(g, p, '#141312', 1.2, { passes: 1 });
+  }
+  const groove = pose.bottom && beat != null ? Math.abs(Math.sin(beat * Math.PI)) * 2 : Math.sin(t * 2.1 + 1) * 0.8;  // nods along while playing
+  const hy = 141 + (1 - w) * 9 + groove * w;
+  const e = twitch || (w > .3 && w < .8) ? 3 : 0, fl = (1 - w) * 6;  // ears flatten while asleep, flick on waking
+  const head = wob(ellPts(234, hy, 23, 21), .8);
+  const earL = [[214, hy - 10], [216 - fl * .5, hy - 36 + fl], [231, hy - 20]];
+  const earR = [[238, hy - 21], [252 + e + fl * .5, hy - 37 + e * .3 + fl], [255, hy - 9]];
+  const headClip = G => { polyPath(head)(G); polyPath(earL)(G); polyPath(earR)(G); };
+  g.save(); g.fillStyle = '#2a2826'; g.globalAlpha = .6; g.beginPath(); headClip(g); g.fill(); g.restore();
+  hatch(g, headClip, [205, hy - 40, 58, 64], '#1d1c1b', { gap: 1.5, alpha: .9, w: 2, angle: -0.7, layers: 3 });
+  stroke(g, head, '#141312', 1.6, { passes: 1 });
+  fillPts(g, [[218, hy - 14], [218.5, hy - 29], [227, hy - 19]], '#5e4444', .7);
+  fillPts(g, [[242, hy - 19], [250 + e, hy - 30], [251, hy - 13]], '#5e4444', .7);
+  const open = Math.max(0, (w - .35) / .65);
+  const blink = ((t % 4.3) < 0.14 ? 0.12 : 1) * open, dx = Math.max(-1, Math.min(1, (lookX - (pose.ox + 58 * pose.flip)) / 180)) * 1.6 * Math.sign(pose.flip || 1);
+  if (open < .15) {
+    for (const ex of [225, 243]) stroke(g, [[ex - 4.5, hy], [ex - 2, hy + 2.5], [ex + 2, hy + 2.5], [ex + 4.5, hy]], '#8c8474', 1.3, { passes: 1, jit: .2 });
+    const zc = t % 3;
+    for (let i = 0; i < 3; i++) {
+      const p = ((zc / 3) + i / 3) % 1;
+      g.save(); g.translate(262 + p * 30 + Math.sin(p * 6) * 3, hy - 22 - p * 50); g.scale(Math.sign(pose.flip || 1), 1);  // keep the z readable when mirrored
+      label(g, 'z', 0, 0, 10 + p * 10, '#6a7f95', (1 - p) * (1 - w * 2));
+      g.restore();
+    }
+  } else for (const ex of [225, 243]) {
+    g.save(); g.fillStyle = '#e8d35a'; g.beginPath(); g.ellipse(ex, hy + 1, 4.4, 5.2 * blink, 0, 0, 7); g.fill();
+    g.fillStyle = '#111'; g.beginPath(); g.ellipse(ex + dx, hy + 1, 1.4 + 2.4 * dark, 4.2 * blink, 0, 0, 7); g.fill();
+    if (blink > .5) { g.fillStyle = '#fff'; g.globalAlpha = .8; g.beginPath(); g.arc(ex + dx + 1.2, hy - 1.5, .9, 0, 7); g.fill(); }
+    g.restore();
+  }
+  fillPts(g, [[232, hy + 8], [236, hy + 8], [234, hy + 10.5]], '#c98a8a');
+  if (t >= meowT && t - meowT < .5) { g.save(); g.fillStyle = '#8a4a55'; g.beginPath(); g.ellipse(234, hy + 14, 2.8, 2.4 * Math.sin(Math.PI * (t - meowT) / .5) + .6, 0, 0, 7); g.fill(); g.restore(); }
+  for (const s of [-1, 1]) for (const dy of [-3, 3]) stroke(g, [[234 + s * 12, hy + 10], [234 + s * 34, hy + 9 + dy]], '#9a958c', .8, { passes: 1, jit: .3, alpha: .8 });
+  g.restore();
+}
+
+// Clawd hops note to note: one foot (chosen by travel direction) lands on the key, holds it, then takes off
+const LEG_OFF = [-24, -8, 8, 24];
+const hops = mel.filter(n => n.m !== null);
+{
+  let pk = null, pl = 1;
+  hops.forEach((n, k) => {
+    const r = keyRect(n.m), kx = r.x + r.w / 2;
+    const dir = pk == null ? 0 : Math.sign(kx - pk);
+    const order = dir > 0 ? (k % 2 ? [3, 2, 1, 0] : [2, 3, 1, 0])
+      : dir < 0 ? (k % 2 ? [0, 1, 2, 3] : [1, 0, 2, 3])
+      : [pl ^ 1, pl, (pl + 2) % 4, (pl + 3) % 4];
+    const leg = order.find(l => kx - LEG_OFF[l] >= 70 && kx - LEG_OFF[l] <= 570) ?? order[0];
+    n.leg = leg; n.bx = kx - LEG_OFF[leg];
+    pk = kx; pl = leg;
+  });
+  hops.forEach((n, k) => {
+    const nb = k + 1 < hops.length ? hops[k + 1].s : hops[0].s + LOOP;
+    n.tk = Math.max(n.s + 0.2, nb - 0.85);  // takeoff beat
+    n.vis = n.tk - n.s;                     // key stays down while the foot is on it (pedal keeps the sound)
+  });
+}
+// Each melody occurrence (loop, idx) is decided once: in the dark, the further the jump from the previous key,
+// the likelier Clawd misses, usually overshooting in the direction of travel.
+let lightOn = true, dark = 0;
+const occ = new Map();
+const keyCX = m => { const r = keyRect(m); return r.x + r.w / 2; };
+hops.forEach((n, i) => n.idx = i);
+function played(loop, idx) {
+  const key = loop * 1000 + idx;
+  if (occ.has(key)) return occ.get(key);
+  const n = hops[idx], prev = hops[(idx + hops.length - 1) % hops.length];
+  // panic: each miss makes the next note likelier to miss and always louder; each hit calms down one step
+  const before = occ.get(idx > 0 ? key - 1 : (loop - 1) * 1000 + hops.length - 1);
+  const panic = before ? (before.wrong ? Math.min(3, before.panic + 1) : Math.max(0, before.panic - 1)) : 0;
+  let m = n.m, wrong = false;
+  if (!lightOn && panic < 3) {  // at full panic it slams the right key: caps the spiral so the piece survives
+    const dist = Math.abs(keyCX(n.m) - keyCX(prev.m)) / wkw;
+    if (Math.random() < Math.min(.9, .08 + .09 * dist + .1 * panic)) {
+      const dir = Math.sign(n.m - prev.m) || (Math.random() < .5 ? -1 : 1);
+      m = n.m + (Math.random() < .7 ? dir : -dir) * (Math.random() < .6 ? 1 : 2);
+      wrong = true;
+    }
+  }
+  const vel = .3 * level(n.s) / .75 * (1 + .6 * panic);
+  const r = { m, wrong, panic, vel, bx: keyCX(m) - LEG_OFF[n.leg] };
+  occ.set(key, r);
+  if (occ.size > 400) for (const k of occ.keys()) { if (k < (loop - 1) * 1000) occ.delete(k); }
+  return r;
+}
+
+function clawdState(pos, t) {
+  if (pos == null) {
+    const ph = t % 1.8, air = ph < .45 ? Math.sin(Math.PI * ph / .45) : 0;
+    return { x: 330, lift: air * 9, rot: 0, leg: -1, air: air > 0, p: ph / .45, squash: ph >= .45 ? Math.max(0, 1 - (ph - .45) / .2) * .1 : 0 };
+  }
+  const loop = Math.floor(pos / LOOP), beat = pos - loop * LOOP;
+  let k = -1;
+  for (let i = 0; i < hops.length; i++) { if (hops[i].s <= beat) k = i; else break; }
+  const N = hops.length, a = hops[k < 0 ? N - 1 : k], as = k < 0 ? a.s - LOOP : a.s;
+  const b = hops[(k + 1) % N], bs = k + 1 >= N ? b.s + LOOP : b.s;
+  const A = played(k < 0 ? loop - 1 : loop, a.idx);
+  const tk = Math.max(as + 0.2, bs - 0.85);
+  if (beat < tk) return { x: A.bx, lift: 0, rot: 0, leg: a.leg, air: false, p: 0, squash: Math.max(0, 1 - (beat - as) / 0.3) * Math.min(.3, 0.14 * A.vel / .3) };  // harder note, flatter landing
+  const B = played(k + 1 >= N ? loop + 1 : loop, b.idx);  // decided at takeoff
+  const p = (beat - tk) / (bs - tk), e = p * p * (3 - 2 * p);
+  const h = (10 + 22 * Math.min(1, (bs - tk) / 0.85) * Math.min(1, Math.abs(B.bx - A.bx) / 60 + .4)) * Math.max(.7, Math.min(1.8, .5 + .5 * B.vel / .3));
+  return { x: A.bx + (B.bx - A.bx) * e, lift: h * 4 * p * (1 - p), rot: Math.sign(B.bx - A.bx) * 0.14 * Math.sin(Math.PI * p),
+    leg: b.leg, air: true, p, squash: p < .15 ? -0.08 * (1 - p / .15) : 0 };
+}
+
+function drawClawd(g, st, t) {
+  const u = 8, bw = 9 * u, bh = 5 * u;
+  const O = '#d97757', OL = '#e39373', LINE = '#a9502f';
+  const blk = (x, y, w, h) => { fillPts(g, rectPts(x, y, w, h), OL, .75); hatch(g, polyPath(wob(rectPts(x, y, w, h), .5)), [x, y, w, h], O, { gap: 1.7, alpha: .9, angle: -1.1 }); stroke(g, wob(rectPts(x, y, w, h), .5), LINE, 1.3, { passes: 1 }); };
+  g.save(); g.translate(st.x, 356 - st.lift); g.rotate(st.rot);  // origin: bottom-center of the body
+  LEG_OFF.forEach((off, i) => {
+    let len;
+    if (!st.air) len = st.leg < 0 ? 18 : (i === st.leg ? 22 : 13);          // landing foot sinks into the key
+    else len = i === st.leg && st.p > .55 ? 16 + (st.p - .55) / .45 * 6 : 16 + Math.sin(t * 20 + i * 1.7);  // reach for the next key
+    blk(off - u / 2, -2, u, len + 2);
+  });
+  const sq = st.squash;
+  g.scale(1 + sq * .6, 1 - sq);
+  const arm = st.air ? -5 : Math.sin(t * 3) * 1.5;
+  blk(-bw / 2 - u, -bh + 2 * u + arm, u + 2, 1.5 * u);
+  blk(bw / 2 - 2, -bh + 2 * u + (st.air ? -5 : -arm), u + 2, 1.5 * u);
+  blk(-bw / 2, -bh, bw, bh);
+  const ey = -bh + 1.4 * u, eyes = [-bw / 2 + 2 * u, -bw / 2 + 6 * u];
+  if (st.expr === 'squint') {         // > <
+    stroke(g, [[eyes[0], ey], [eyes[0] + u, ey + .75 * u], [eyes[0], ey + 1.5 * u]], '#2a1c17', 2.4, { passes: 2, jit: .3 });
+    stroke(g, [[eyes[1] + u, ey], [eyes[1], ey + .75 * u], [eyes[1] + u, ey + 1.5 * u]], '#2a1c17', 2.4, { passes: 2, jit: .3 });
+  } else if (st.expr === 'surprise') { // big square eyes with a glint
+    for (const ex of eyes) { fillPts(g, rectPts(ex - 2, ey - 3, u + 4, 1.5 * u + 6), '#2a1c17', .95); fillPts(g, rectPts(ex, ey - 1, 3, 3), '#fff', .9); }
+  } else {
+    const blink = (t % 3.7) < 0.12 ? 0.15 : 1;
+    for (const ex of eyes) { const eh = 1.5 * u * blink; fillPts(g, rectPts(ex, ey + (1.5 * u - eh) / 2, u, eh), '#2a1c17', .95); }
+  }
+  g.restore();
+}
+
+function drawNoteGlyph(g, x, y, col, a) {
+  g.save(); g.globalAlpha = a; g.fillStyle = col; g.strokeStyle = col; g.lineWidth = 1.6; g.lineCap = 'round';
+  g.beginPath(); g.ellipse(x, y, 4, 3, -0.35, 0, 7); g.fill();
+  g.beginPath(); g.moveTo(x + 3.6, y); g.lineTo(x + 3.6, y - 15); g.quadraticCurveTo(x + 9, y - 11, x + 9, y - 6); g.stroke();
+  g.restore();
+}
+
+// ---------- main loop ----------
+let last = performance.now(), lastCur = null, catW = 0, startT = null, surpriseUntil = 0, bangUntil = 0, sweatT = -9, meowT = -9, impactT = -9, impactP = 0, impactX = 0;
+const parts = [];
+const [clawdC, clawdG] = makeLayer();
+function frame(now) {
+  const t = now / 1000, dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const bf = Math.floor(now / 140), L = layers[bf % 3];
+  const pos = songPos(), loop = pos == null ? 0 : Math.floor(pos / LOOP), beat = pos == null ? null : pos - loop * LOOP;
+  const cur = beat == null ? null : mel.find(n => n.m !== null && beat >= n.s && beat < n.s + n.d) || null;
+  const curWrong = !!(cur && played(loop, cur.idx).wrong);
+  dark = Math.max(0, Math.min(1, dark + (lightOn ? -1 : 1) * dt / .25));
+  const st = clawdState(pos, t);
+  if (cur && cur !== lastCur && curWrong) {   // missed: startled, sweating, or both
+    const r = Math.random();
+    if (r < .67) { surpriseUntil = t + .7; bangUntil = t + .7; }
+    if (r >= .33) sweatT = t;
+    if (actx && Math.random() < .4 && t - meowT > 2.5) {  // the cat noticed
+      const delay = .15 + Math.random() * .25;
+      meowT = t + delay; meow(actx.currentTime + delay);
+    }
+  }
+  st.expr = t < surpriseUntil ? 'surprise' : dark > .5 ? 'squint' : 'normal';
+  if (cur && cur !== lastCur) {
+    const P = played(loop, cur.idx);
+    if (P.panic) { impactT = t; impactP = P.panic; impactX = keyCX(P.m); }
+    parts.push({ x: st.x + (Math.random() - .5) * 50, y: 312, vx: (Math.random() - .5) * 18, vy: -28 - Math.random() * 16, age: 0, col: Math.random() < .5 ? '#e0662f' : '#3a3632' });
+  }
+  lastCur = cur;
+
+  const shake = 1.8 * impactP * Math.max(0, 1 - (t - impactT) / .2);  // hard hits shake the room
+  ctx.save(); ctx.translate((Math.random() - .5) * 2 * shake, (Math.random() - .5) * 2 * shake);
+  ctx.drawImage(L.base, 0, 0, W, H);
+  R = mulberry32(bf * 7919 + 1);
+  const fl = 0.3 + Math.sin(t * 7) * .02 + Math.sin(t * 13.3) * .015;
+  const lg = ctx.createRadialGradient(566, 92, 4, 566, 92, 150);
+  const lit = 1 - dark;
+  lg.addColorStop(0, `rgba(255,214,120,${(fl + .25) * lit})`); lg.addColorStop(.35, `rgba(255,205,110,${fl * .5 * lit})`); lg.addColorStop(1, 'rgba(255,200,100,0)');
+  ctx.fillStyle = lg; ctx.fillRect(400, 0, 240, 260);
+  if (lit > .01) hatch(ctx, G => G.ellipse(566, 98, 26, 5, 0, 0, 7), [540, 92, 52, 12], '#ffe9a8', { gap: 1.5, alpha: .9 * lit, angle: 0 });
+
+  drawSheet(ctx, beat, cur, curWrong);
+  drawKeys(ctx, beat, loop, L.blk);
+  // Clawd (and its notes) sit on their own layer so they only dim a little in the dark and stay the visual focus
+  clawdG.clearRect(0, 0, W, H);
+  drawClawd(clawdG, st, t);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.age += dt; p.x += (p.vx + Math.sin(p.age * 3) * 8) * dt; p.y += p.vy * dt;
+    if (p.age > 2.4) { parts.splice(i, 1); continue; }
+    drawNoteGlyph(clawdG, p.x, p.y, p.col, Math.min(1, p.age * 4) * (1 - p.age / 2.4) * .85);
+  }
+  if (dark > 0) {
+    clawdG.save(); clawdG.globalCompositeOperation = 'source-atop'; clawdG.fillStyle = `rgba(14,18,42,${.22 * dark})`; clawdG.fillRect(0, 0, W, H); clawdG.restore();
+    ctx.fillStyle = `rgba(14,18,42,${.68 * dark})`; ctx.fillRect(0, 0, W, H);  // the cat is drawn after this: black fur, glowing eyes
+  }
+  ctx.drawImage(clawdC, 0, 0, W, H);
+  if (t - impactT < .25) {  // impact lines around the slamming foot
+    const q = (t - impactT) / .25, len = (8 + 6 * impactP) * (.4 + q);
+    for (const a of [-2.6, -2.1, -1.57, -1.05, -.55]) {
+      const r0 = 8 + q * 10;
+      stroke(ctx, [[impactX + Math.cos(a) * r0, 378 + Math.sin(a) * r0], [impactX + Math.cos(a) * (r0 + len), 378 + Math.sin(a) * (r0 + len)]], '#ffb347', 2.2, { passes: 1, jit: .3, alpha: 1 - q });
+    }
+  }
+  const running = actx && actx.state === 'running';
+  catW = running ? Math.min(1, catW + dt / 1.2) : Math.max(0, catW - dt / 2.5);
+  const pose = catPose(startT == null ? null : t - startT);
+  if (pose.bottom) drawTail(ctx, t, beat);
+  drawCat(ctx, t, beat, st.x, !!(cur && cur.m >= 79), catW, pose);
+
+  if (t >= meowT && t - meowT < 1.1) {
+    const q = (t - meowT) / 1.1, hx = pose.ox + 58 * pose.flip, hy = pose.oy - 33;
+    label(ctx, '喵~', hx + 30 * Math.sign(pose.flip || 1), hy - 28 - q * 14, 18, '#fbf6e8', 1 - q);
+  }
+  const headY = 356 - st.lift - 40;
+  if (t < bangUntil) for (let i = 0; i < 2; i++) label(ctx, '!', st.x + 36, headY - 4, 38, '#ffcf4a');
+  if (t - sweatT < .9) {
+    const a = 1 - (t - sweatT) / .9;
+    for (const [dx, dy, s] of [[42, 4, 1], [-44, 10, .7]]) {
+      const x = st.x + dx, y = headY + dy + (t - sweatT) * 16 * s;
+      ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = '#a8dcff'; ctx.strokeStyle = '#3f86bd'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x, y - 8 * s); ctx.quadraticCurveTo(x + 5 * s, y, x, y + 4 * s); ctx.quadraticCurveTo(x - 5 * s, y, x, y - 8 * s); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+  }
+
+  if (!actx) {
+    fillPts(ctx, wob(rectPts(170, 500, 300, 56), 1.5), '#f6efdc', .85);
+    stroke(ctx, wob(rectPts(170, 500, 300, 56), 1.2), '#5f7b95', 1.6);
+    label(ctx, '▶  点一下，开演', 320, 537, 26, '#3a3632');
+  } else {
+    label(ctx, actx.state === 'running' ? '♪ Lullaby for a Black Cat — piano: Clawd' : '‖  暂停中，再点一下继续', 320, 540, 17, '#f4efe2', .9);
+  }
+  ctx.restore();
+  ctx.drawImage(grain, 0, 0, W, H);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function toggle() {
+  if (!actx) initAudio();
+  else if (actx.state === 'running') actx.suspend(); else actx.resume();
+}
+function toggleLight() {
+  lightOn = !lightOn;
+  if (!lightOn) { const t = performance.now() / 1000; surpriseUntil = t + .9; bangUntil = t + .9; }
+}
+cv.addEventListener('click', e => {
+  const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+  if (x > 520 && x < 612 && y > 30 && y < 180) toggleLight(); else toggle();
+});
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); toggle(); }
+  if (e.code === 'KeyL') toggleLight();
+});
+</script>
+</body>
+</html>
