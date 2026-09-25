@@ -8,7 +8,7 @@
 |---|---|---|
 | [telepaste](telepaste/) | 把发给 Telegram bot 的文字、图片送到电脑剪贴板；可选保存日记和上传图床 | [安装与使用](telepaste/README.md) |
 | [sins-virtues-radar](sins-virtues-radar/) | 和 agent 一起评分、讨论，生成雷达图 | [使用流程](sins-virtues-radar/README.md) |
-| [clawd-lullaby](clawd-lullaby/) | 蜡笔风钢琴小动画：猫用尾巴伴奏，Clawd 弹旋律，关灯后会弹错 | [怎么玩](clawd-lullaby/README.md) |
+| [clawd-lullaby](clawd-lullaby/) | 蜡笔风钢琴小动画：猫用尾巴伴奏，Clawd 弹旋律，关灯后会弹错 | [在线玩](https://kirisawa-subaru.github.io/light-sparkle/clawd-lullaby/) · [说明](clawd-lullaby/README.md) |
 
 
 ## 许可证

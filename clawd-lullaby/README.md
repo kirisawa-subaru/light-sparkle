@@ -6,7 +6,9 @@
 
 ## 怎么玩
 
-用浏览器直接打开 `index.html`，不需要安装任何东西。
+在线玩：<https://kirisawa-subaru.github.io/light-sparkle/clawd-lullaby/>
+
+也可以下载 `index.html`，用浏览器直接打开，不需要安装任何东西。
 
 | 操作 | 效果 |
 |---|---|
